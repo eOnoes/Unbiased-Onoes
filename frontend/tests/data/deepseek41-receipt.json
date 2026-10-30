@@ -1,0 +1,25 @@
+{
+  "description": "Sanitized historical 256/64 timing receipt; not a fresh benchmark or quality qualification.",
+  "base": "2049dd2a292ffc38fd1cc006be04664ba15de5bb",
+  "donor": "8183c6b67162340c09b67360860177c577a65f2e",
+  "protocol": "READY 1024 stop\nDONE 64 256 38192.0 7592.7 length 0 0 0 0 0\n",
+  "result": {
+    "generated_tokens": 64,
+    "prompt_ms": 38192.0,
+    "decode_ms": 7592.7,
+    "finish": "length",
+    "pps": 6.702974444909929,
+    "tps": 8.429149051062204
+  },
+  "health": {
+    "status": "ok",
+    "loaded": true
+  },
+  "models": {
+    "data": [
+      {
+        "id": "daslab-deepseek41-iq1-m-unbiased"
+      }
+    ]
+  }
+}
