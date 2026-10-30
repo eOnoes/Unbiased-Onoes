@@ -1,0 +1,52 @@
+{
+  "schema": 1,
+  "profiles": [
+    {
+      "id": "glm53-maya-s24",
+      "backend": "maya-glm",
+      "family": "glm53",
+      "mode": "native",
+      "context": 65536,
+      "gpu": 0,
+      "precision_policy": "full-computation",
+      "qualification": "pending",
+      "qualification_record": "",
+      "source_root": "<MAYA_ROOT>",
+      "library_dirs": [],
+      "service_config": "<LOCAL_MAYA_CONFIG>",
+      "artifacts": [],
+      "expected_metadata": {},
+      "pack_files": {},
+      "requirements": {"free_ram_gib": 80, "free_commit_gib": 96, "free_vram_mib": 28000},
+      "environment": {"MAYA_GLM_NO_MTP": "1", "MAYA_GLM_RAM_HEADROOM_GB": "16"},
+      "binaries": {
+        "frontend": {"path": "<MAYA_PYTHON>", "sha256": "<VERIFIED_SHA256>"},
+        "engine": {"path": "<MAYA_EXE>", "sha256": "<VERIFIED_SHA256>"}
+      }
+    },
+    {
+      "id": "deepseek41-iq1-m",
+      "backend": "unbiased-deepseek41",
+      "family": "deepseek41",
+      "mode": "window",
+      "prefill_chunk": 0,
+      "context": 1024,
+      "gpu": 0,
+      "precision_policy": "full-computation",
+      "qualification": "pending",
+      "qualification_record": "",
+      "source_root": "<PRESERVED_BUILD_ROOT>",
+      "library_dirs": ["C:/Program Files/NVIDIA GPU Computing Toolkit/CUDA/v13.3/bin", "C:/Program Files/NVIDIA GPU Computing Toolkit/CUDA/v13.3/bin/x64"],
+      "artifacts": [],
+      "expected_metadata": {},
+      "pack_files": {},
+      "requirements": {"free_ram_gib": 32, "free_commit_gib": 40, "free_vram_mib": 28000},
+      "environment": {"DS4_ENGRAM_CACHE_MB": "64", "DS4_WIN_DIRECT": "0"},
+      "engine_args": ["--architecture", "deepseek41", "--model", "<FIRST_SHARD>", "--engram", "<ENGRAM_GGUF>", "--pack", "<OFFSET_INDEX>", "--max-context", "1024", "--prefill-chunk", "0", "--dspark", "none", "--vision", "off", "--mmap-experts", "on", "--ssd-cache", "0", "--expert-profile", "none", "--cpu-threads", "12"],
+      "binaries": {
+        "frontend": {"path": "<UNBIASED_STRATA_EXE>", "sha256": "<VERIFIED_SHA256>"},
+        "engine": {"path": "<CUSTOM_STRATA_POLY_EXE>", "sha256": "<VERIFIED_SHA256>"}
+      }
+    }
+  ]
+}

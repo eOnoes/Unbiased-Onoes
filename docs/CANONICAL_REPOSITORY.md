@@ -21,7 +21,8 @@ about no configured publishing destination apply to that stage. This document
 records the later explicitly authorized canonical destination. `MAYA_INTEGRATION.md`
 is the staged design. No new GPU/model runtime validation is implied by publishing.
 
-The next gate is CPU-only exact artifact/format/execution-mode admission and a
-thin controller retaining intact backend frontends. The failed DeepSeek41 IQ1_M
+CPU-only artifact/format/mode admission and a thin intact-backend controller
+are implemented; see `CONTROLLER.md`. The next gate is scheduled real Windows
+worker/GPU/transport qualification. The failed DeepSeek41 IQ1_M
 fast-chunked FP16 mode remains denied. Existing Maya testing is independently
 owned and must not be stopped, adopted or restarted by source-management work.

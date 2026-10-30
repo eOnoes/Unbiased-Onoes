@@ -1,0 +1,10 @@
+{
+  "schema": 1,
+  "repository": "https://github.com/mw00/project-maya.git",
+  "commit": "9030b73661b41d947117f7161fc6a11e14a5107a",
+  "version": "1.1.41",
+  "ggml_base": "3cf03257f219afbe7334045ff7c6a06ac68c627d",
+  "backend": "maya-glm",
+  "serving": "Keep the pinned Maya Python frontend and GLM engine together; no automatic fetching, installation or updates.",
+  "qualification": "pending real-backend transport, cancellation, quality and lifecycle tests"
+}

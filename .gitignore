@@ -78,3 +78,8 @@ dist-hip/
 # Sanitized summaries belong in docs/; small explicit fixtures in tests/data/.
 /evidence/
 /references/
+
+# Private controller configuration, credentials, and mutable backend state.
+/profiles.local.json
+/.strata-runtime/
+/.strata-control-key

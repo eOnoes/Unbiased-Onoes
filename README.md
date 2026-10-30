@@ -1,3 +1,27 @@
+# Unbiased-Onoes
+
+Canonical maintained source: [eOnoes/Unbiased-Onoes](https://github.com/eOnoes/Unbiased-Onoes), branch `main`.
+The preserved custom Windows/DeepSeek41 implementation is documented in
+[CUSTOM_BASELINE.md](docs/CUSTOM_BASELINE.md); original attribution follows below.
+
+The initial [single entry point and API controller](docs/CONTROLLER.md) is now
+implemented as CPU/synthetic/fake-worker-tested source. It keeps existing Unbiased
+and pinned Maya frontends isolated, validates exact model/format/mode identities,
+and enforces one managed GPU owner. Real-backend and GPU qualification is pending;
+sample profiles refuse loading until explicitly qualified. No production-readiness
+or new inference-performance claim is made.
+
+```text
+python strata.py check config/profiles.example.json
+python -B -m unittest discover -s tests/control -v
+```
+
+See [the staged integration plan](docs/MAYA_INTEGRATION.md),
+[canonical source provenance](docs/CANONICAL_REPOSITORY.md), and the
+[pinned Maya dependency](config/maya.lock.json). No binaries or weights are vendored.
+
+---
+
 ## Credits and license
 
 The engines are PolyStrata's, by VecSzn and contributors, built on [Strata](https://github.com/Niko1221/Strata) by
@@ -143,11 +167,11 @@ Flash-Next: the fork is ahead on every workload. Qwen3.6: decode is within the r
 slower with non-overlapping ranges and is recorded as an open finding. The two engines were built separately in the
 two trees, so an engine-build difference is not excluded.
 
-**pi on a fixed coding task** (pi 0.85.1, Flash-Next on the 3090, three runs a side, `…-step9/row3/`): every run
+**pi on a fixed coding task** (pi 0.85.1, Flash-Next on the 3090, three runs a side, `â€¦-step9/row3/`): every run
 completed the task. Generated tokens per wall-clock second, the whole run: upstream 72.1, fork 76.6 (medians); the raw
 wall times (36.3 vs 44.7 s) follow the length of each sampled trajectory.
 
-**Short-prompt decode through the fork, first end-to-end runs** (`…-step6/`, 2026-10-17; ranges over the smoke
+**Short-prompt decode through the fork, first end-to-end runs** (`â€¦-step6/`, 2026-10-17; ranges over the smoke
 requests, not medians of a benchmark):
 
 | Model | RTX 3090 | RTX A6000 |
