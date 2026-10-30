@@ -25,7 +25,7 @@ SAFE_ENV = {'STRATA_ROUTE_TAIL_SKIP': '0', 'MAYA_GLM_TRUNK_KEEP': '8',
             'STRATA_DS4_DISK_SKIP_W': '0', 'MAYA_DS4_RAM_SKIP_W': '0',
             'STRATA_DS4_RAM_SKIP_W': '0', 'DS4_DISK_SKIP_W': '0', 'DS4_RAM_SKIP_W': '0'}
 CAPS = {
-    'maya-glm': ['/v1/chat/completions', '/v1/completions', '/v1/responses', '/v1/messages'],
+    'maya-glm': ['/v1/chat/completions', '/v1/responses', '/v1/messages'],
     'unbiased': ['/v1/chat/completions', '/v1/completions', '/completion', '/tokenize', '/detokenize', '/apply-template'],
 }
 
@@ -151,8 +151,10 @@ def admit(profile):
         if not vals('--glm-pack') or vals('--parallel') != ['1'] or cfg.get('gpu') != [0]:
             raise AdmissionError('Maya profile must name its GLM pack, GPU 0 and parallel 1')
         validate_pack(profile, vals('--glm-pack')[0], {'dense.bin', 'index.txt', 'native_experts.txt', 'sources.json'})
-        if Path(cfg.get('installer', {}).get('gguf', '')).resolve() != Path(profile['artifacts'][0]['path']).resolve():
+        installed = (cfg.get('installer') or {}).get('gguf')
+        if installed and Path(installed).resolve() != Path(profile['artifacts'][0]['path']).resolve():
             raise AdmissionError('Maya config names another artifact')
+        validate_tokenizer(profile, cfg, root)
         if sha256_file(cfg['exe']) != binaries['engine']['sha256']:
             raise AdmissionError('Maya config points to another engine')
         for key in cfg.get('env', {}):
@@ -224,7 +226,9 @@ def worker_command(profile, port, runtime_dir, config=None, backend_key=''):
     if profile['backend'] == 'maya-glm':
         cfg = dict(config)
         cfg.update(host='127.0.0.1', port=port, model_name=profile['id'],
-                   model_management=False, api_key=backend_key, idle_unload_s=0)
+                   model_management=False, idle_unload_s=0)
+        cfg.pop('api_key', None)
+        cfg['_strata_controller'] = {'schema': 1, 'profile': profile['id']}
         for key in list(cfg):
             if key.startswith('mcp'):
                 del cfg[key]
@@ -232,14 +236,84 @@ def worker_command(profile, port, runtime_dir, config=None, backend_key=''):
         # Keep mutable service files away from the working Maya config/source.
         cfg['log'] = str(runtime_dir / 'maya-engine.log')
         cp = runtime_dir / 'maya-worker.json'
+        cleanup_runtime_config(runtime_dir, profile['id'])
         cp.write_text(json.dumps(cfg, indent=2), encoding='utf-8')
+        # Pinned Maya --api-key defaults to STRATA_API_KEY (server.py:5728).
+        # Set it only after config serialization; never persist it in JSON.
+        env['STRATA_API_KEY'] = backend_key
         cmd = [b['frontend']['path'], str(Path(profile['source_root']) / 'serve/server.py'),
                '--engine', 'strata', '--config', str(cp), '--host', '127.0.0.1', '--port', str(port)]
-        return cmd, profile['source_root'], env
+        return cmd, profile['source_root'], env, cp
     cmd = [b['frontend']['path'], '--engine', b['engine']['path'], '-m', profile['artifacts'][0]['path'],
            '--host', '127.0.0.1', '--port', str(port), '--alias', profile['id'],
            '-c', str(profile['context'])]
     if backend_key:
         cmd += ['--api-key', backend_key]
     cmd += ['--', *profile['engine_args']]
-    return cmd, profile.get('source_root', str(Path(b['frontend']['path']).parent)), env
+    return cmd, profile.get('source_root', str(Path(b['frontend']['path']).parent)), env, None
+
+
+def cleanup_runtime_config(directory, profile_id):
+    """Remove only an identifiable controller-owned config, never a tree."""
+    directory = Path(directory)
+    path = directory / 'maya-worker.json'
+    if directory.is_symlink() or path.is_symlink():
+        raise AdmissionError('refusing linked runtime configuration')
+    if not path.exists():
+        return
+    if path.stat().st_size > 1024 * 1024:
+        raise AdmissionError('unrecognized runtime configuration requires owner review')
+    try:
+        cfg = json.loads(path.read_text(encoding='utf-8'))
+    except (ValueError, OSError) as e:
+        raise AdmissionError('unrecognized runtime configuration requires owner review') from e
+    marker = cfg.get('_strata_controller')
+    modern = marker == {'schema': 1, 'profile': profile_id}
+    # Exact f45813c-generated shape; enables migration of its credential file
+    # only within this registered profile's controller runtime directory.
+    legacy = (marker is None and cfg.get('host') == '127.0.0.1' and
+              cfg.get('model_name') == profile_id and cfg.get('model_management') is False and
+              cfg.get('log') == str(directory / 'maya-engine.log') and
+              isinstance(cfg.get('port'), int) and isinstance(cfg.get('args'), list))
+    if not (modern or legacy):
+        raise AdmissionError('unowned runtime configuration requires owner review')
+    path.unlink()
+
+
+def validate_tokenizer(profile, cfg, source_root):
+    """Bind bounded tokenizer assets and the effective pinned GLM template."""
+    identity = profile.get('tokenizer_identity', {})
+    declared = Path(identity.get('root', ''))
+    if not identity.get('root') or not declared.is_absolute() or declared.is_symlink():
+        raise AdmissionError('explicit unlinked tokenizer root required')
+    root = declared.resolve()
+    if not cfg.get('tokenizer') or Path(cfg['tokenizer']).resolve() != root:
+        raise AdmissionError('tokenizer directory differs from the registered profile')
+    if identity.get('artifact_header_sha256') != profile['artifacts'][0]['header_sha256']:
+        raise AdmissionError('tokenizer identity is not tied to this artifact')
+    files = identity.get('files', {})
+    required = {'vocab.json', 'merges.txt', 'tokenizer.json', 'token_type.json', 'chat_template.jinja'}
+    if not required.issubset(files):
+        raise AdmissionError('complete bounded tokenizer/template identities required')
+    total = 0
+    for name, entry in files.items():
+        if Path(name).name != name or root.is_symlink() or (root / name).is_symlink():
+            raise AdmissionError('invalid tokenizer asset path')
+        p = root / name
+        size = p.stat().st_size; total += size
+        if size != entry.get('size') or size > 32 * 1024 * 1024 or total > 64 * 1024 * 1024:
+            raise AdmissionError('tokenizer asset size exceeds its registered bounds')
+        if sha256_file(p) != entry.get('sha256'):
+            raise AdmissionError('tokenizer/template identity mismatch')
+    # Mirror pinned server.py:5510 chat_template_path without importing its
+    # service. MAYA_PACK_TEMPLATE is cleared by clean_environment. The swap is
+    # conditional on the pack's exact GLM signature, not merely its family name.
+    packed = root / 'chat_template.jinja'
+    if packed.stat().st_size > 1024 * 1024:
+        raise AdmissionError('pack chat template exceeds bounded identity limit')
+    head = packed.read_text(encoding='utf-8', errors='replace')
+    glm = Path(source_root) / 'serve/glm5_chat_template.jinja'
+    template = glm if (glm.exists() and head.startswith('[gMASK]<sop>') and
+                       "reasoning_effort in ['low', 'high']" in head) else packed
+    if template.stat().st_size > 1024 * 1024 or sha256_file(template) != identity.get('effective_template_sha256'):
+        raise AdmissionError('effective Maya GLM template identity mismatch')

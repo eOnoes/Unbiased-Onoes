@@ -1,0 +1,19 @@
+{
+  "provenance": {
+    "commit": "9030b73661b41d947117f7161fc6a11e14a5107a",
+    "source": "serve/server.py:4791-4805,4852-4866",
+    "method": "Source-derived response shape, synthetic alias/context; no live service queried"
+  },
+  "health": {
+    "status": "ok", "max_context": 1024, "model": "fixture",
+    "max_text_file": 262144, "model_label": "fixture", "images": false,
+    "api_key": true, "defaults": {}, "version": "1.1.41",
+    "mcp_tools": false, "unloaded": false
+  },
+  "models": {
+    "object": "list",
+    "data": [{"id": "fixture", "object": "model", "status": {"value": "loaded"},
+      "meta": {"n_ctx": 1024}, "context_length": 1024,
+      "architecture": {"input_modalities": ["text"], "output_modalities": ["text"]}}]
+  }
+}

@@ -4,8 +4,14 @@ import os
 import signal
 import subprocess
 import threading
+import time
 from pathlib import Path
 from .metadata import AdmissionError
+
+
+class JobAccounting(ctypes.Structure):
+    _fields_ = [(x, ctypes.c_int64) for x in ('user', 'kernel', 'period_user', 'period_kernel')] + [
+        (x, ctypes.c_uint32) for x in ('faults', 'total', 'active', 'terminated')]
 
 
 class DeviceLease:
@@ -59,6 +65,8 @@ class DeviceLease:
         if self.handle:
             self.release_event.set()
             self.thread.join(timeout=5)
+            if self.thread.is_alive():
+                raise AdmissionError('device lease release thread has not completed')
             self.thread = None
         if self.file:
             self.file.close()
@@ -131,6 +139,7 @@ class Worker:
         k.GetExitCodeProcess.argtypes = [w.HANDLE, ctypes.POINTER(w.DWORD)]
         k.TerminateProcess.argtypes = [w.HANDLE, w.UINT]
         k.TerminateJobObject.argtypes = [w.HANDLE, w.UINT]
+        k.QueryInformationJobObject.argtypes = [w.HANDLE, ctypes.c_int, ctypes.c_void_p, w.DWORD, ctypes.c_void_p]
         k.CloseHandle.argtypes = [w.HANDLE]
         self.job = k.CreateJobObjectW(None, None)
         limits = EXT(); limits.basic.flags = 0x2000  # KILL_ON_JOB_CLOSE
@@ -163,7 +172,8 @@ class Worker:
             return 1
         from ctypes import wintypes as w
         code = w.DWORD()
-        self.k.GetExitCodeProcess(self.process, ctypes.byref(code))
+        if not self.k.GetExitCodeProcess(self.process, ctypes.byref(code)):
+            raise AdmissionError('cannot establish owned worker exit state')
         return None if code.value == 259 else code.value
 
     def stop(self):
@@ -179,9 +189,30 @@ class Worker:
                         self.proc.wait(timeout=5)
                 self.proc = None
             if self.job:
-                self.k.TerminateJobObject(self.job, 1)
+                if not self.k.TerminateJobObject(self.job, 1):
+                    error = AdmissionError('TerminateJobObject failed; ownership retained')
+                    error.worker = self
+                    raise error
                 if self.process:
-                    self.k.WaitForSingleObject(self.process, 5000)
+                    if self.k.WaitForSingleObject(self.process, 5000) != 0:
+                        error = AdmissionError('owned root termination wait failed/timed out; ownership retained')
+                        error.worker = self
+                        raise error
+                deadline = time.monotonic() + 5
+                while True:
+                    account = JobAccounting()
+                    if not self.k.QueryInformationJobObject(self.job, 1, ctypes.byref(account), ctypes.sizeof(account), None):
+                        error = AdmissionError('owned job accounting unavailable; ownership retained')
+                        error.worker = self
+                        raise error
+                    if account.active == 0:
+                        break
+                    if time.monotonic() >= deadline:
+                        error = AdmissionError('owned descendants still active; ownership retained')
+                        error.worker = self
+                        raise error
+                    time.sleep(0.05)
                 self.k.CloseHandle(self.job); self.job = None
             if self.process:
                 self.k.CloseHandle(self.process); self.process = None
+            return {'owned_job_empty': True}

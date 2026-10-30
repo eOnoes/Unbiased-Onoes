@@ -50,6 +50,21 @@ must agree with the registered originals. DeepSeek41 requires `ds4.txt`,
 backbone directory. This prevents silently reusing an old E: index after D:
 staging or pairing a valid checkpoint header with a different prepared pack.
 
+Maya's optional `installer.gguf` is checked when present; normal prepared-pack
+installs may leave it null. Pack sources remain mandatory in either case.
+
+Maya profiles also require `tokenizer_identity`: an absolute `root` matching the
+service config's tokenizer directory, `artifact_header_sha256` matching the first
+registered shard, and `files` mapping `vocab.json`, `merges.txt`, `tokenizer.json`,
+`token_type.json` and `chat_template.jinja` to `{size, sha256}`. Each file is
+limited to 32 MiB, all files together to 64 MiB. Record
+`effective_template_sha256` for the actual selected template (1 MiB maximum).
+Maya substitutes pinned `serve/glm5_chat_template.jinja` when the pack template
+has its GLM signature; otherwise the registered pack template remains effective.
+The validator mirrors that pinned conditional selection. The profile receipt must
+verify those assets against the intended checkpoint, not merely hash arbitrary
+files. Unbiased's vocabulary/template are bound by its admitted GGUF header.
+
 Header identity is not full weight-file integrity. Record verified publisher
 weight hashes and exact evidence for each artifact in the local qualification
 record before approval. The initial controller also enforces Windows resource
@@ -89,33 +104,52 @@ uses its preserved C++ frontend and child unchanged. Executable hashes must
 match the locally registered frontend/engine before any worker starts.
 Each worker gets its own temporary backend API key, distinct from the public
 controller key; direct unauthenticated calls to its private port are refused.
-Generated runtime configs may contain that transient key and must remain local.
+Maya receives that key through its existing `STRATA_API_KEY` environment option;
+the generated JSON contains no API key. Controller-owned runtime config is
+removed on failed load, verified unload and shutdown. Startup removes identifiable
+stale configs only for registered profiles under the GPU lease, including the
+previous controller's exact config shape; unrecognized files are preserved and
+block startup. Runtime logs remain local. No global permissions are changed.
 
 ## API and ownership contract
 
 - Exactly one managed GPU lease and worker. A named Windows mutex survives
   across HTTP request threads; a worker-only kill-on-close job contains owned
-  descendants. External compute owners/known inference processes block loading;
+  descendants. Unload checks successful job termination, root wait, zero active
+  descendants and post-exit resource/ownership evidence before releasing the
+  lease. Any uncertain result keeps the worker/lease in failed state for explicit
+  cleanup retry; it cannot announce idle or admit another model. External compute
+  owners/known inference processes block loading;
   ownership/accounting probe failures fail closed. Nothing discovered is killed.
   The lease coordinates managed controllers; it cannot prevent an independent
   application from taking GPU memory after a successful probe. Real WDDM owner
   accounting and this external race remain explicit qualification limits.
-- Resource checks run only for an explicit approved future load, never at import,
-  controller startup, schema checks or fake-worker tests. WDDM ownership/resource
+- Resource checks run only for an explicit approved future load or owned-worker
+  retirement, never at import, controller startup, schema checks or fake-worker tests. WDDM ownership/resource
   behavior and nested jobs remain part of real Windows qualification.
 - Switching requires explicit unload followed by load. Unload refuses active
   requests; no implicit cancellation/replay. Actual allocated context and alias
-  must match before readiness. A dead worker needs explicit cleanup/reload.
+  must match before readiness. Maya readiness uses its pinned `unloaded`, version
+  and model/context fields plus its loaded model listing; the Unbiased contract
+  separately requires `service=strata` and `loaded=true`. A dead worker needs
+  explicit cleanup/reload.
 - Original request JSON and response/tool-stream bytes pass through. The gateway
   does not render chat templates, reorder arguments, replay partial tools or fall
   back to a different engine/model/quant/context. Client disconnect closes the
-  owned upstream request; verify backend cancellation during the scheduled gate.
+  owned upstream request, including when disconnection precedes connection
+  assignment or happens during upload/before the first response byte. No retry
+  follows cancellation. Verify real backend cancellation during the scheduled gate.
 - Endpoint support follows the selected frontend. Maya exposes its existing chat,
-  Responses and Anthropic APIs; Unbiased exposes its existing chat/completion and
+  Responses and Anthropic APIs (no Maya `/v1/completions`). Anthropic
+  `/v1/messages?beta=true` or `beta=false` is validated and forwarded with the
+  query and Anthropic version/beta headers intact. Unbiased exposes chat/completion and
   tokenizer/template APIs. Unsupported routes fail explicitly. The dashboard and
   backend management endpoints are not exposed by this first gateway stage.
 - Background generation, constrained schema/grammar/required-tool claims and
-  per-request engine-tuning extensions are denied until qualified. Unbiased
+  per-request engine-tuning extensions are denied until qualified. This includes
+  top-level `json_schema`, `response_format`, `grammar`, Responses `text.format`
+  other than plain text, and forced/named tool choices. Ordinary Anthropic
+  `tool_choice={type:auto}` and `{type:none}` use their own API dialect. Unbiased
   explicit `top_k` outside 1..64 is rejected instead of silently clamped. Message,
   reasoning and ordinary tool fields stay backend-owned.
 - All inherited MAYA_/STRATA_/DS4_ tuning is cleared. Full-computation controls

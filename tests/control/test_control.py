@@ -130,7 +130,7 @@ class RegistryTests(unittest.TestCase):
             cfg = {'args': ['--glm-pack', 'pack', '--max-context', '1024', '--parallel', '1'],
                    'env': {'MAYA_GLM_NO_MTP': '1', 'MAYA_GLM_RAM_HEADROOM_GB': '16'}, 'mcp': ['forbidden']}
             before = copy.deepcopy(cfg)
-            cmd, cwd, env = worker_command(p, 18999, Path(d), cfg)
+            cmd, cwd, env, runtime_config = worker_command(p, 18999, Path(d), cfg, "fixture-only-worker-key")
             self.assertIn(str(Path(d) / 'serve/server.py'), cmd)
             self.assertEqual(cfg, before); self.assertEqual(env['MAYA_GLM_NO_MTP'], '1')
             generated = json.loads((Path(d) / 'maya-worker.json').read_text())
@@ -139,7 +139,7 @@ class RegistryTests(unittest.TestCase):
 
 class FakeWorker:
     def __init__(self, argv, cwd, env):
-        self.dead = False; self.posts = []; self.stops = 0; self.partial = False
+        self.dead = False; self.posts = []; self.targets = []; self.received_headers = []; self.stops = 0; self.partial = False
         self.wait_stream = False; self.cancelled = threading.Event()
         parent = self
         class Handler(BaseHTTPRequestHandler):
@@ -150,8 +150,8 @@ class FakeWorker:
                 return True
             def do_GET(self):
                 if not self.auth(): return
-                obj = {'status': 'ok', 'loaded': True, 'max_context': 1024}
-                if self.path == '/v1/models': obj = {'data': [{'id': 'fixture'}]}
+                obj = {'status': 'ok', 'service': 'strata', 'loaded': True, 'model': 'fixture', 'max_context': 1024}
+                if self.path == '/v1/models': obj = {'object': 'list', 'data': [{'id': 'fixture'}]}
                 data = json.dumps(obj).encode()
                 self.send_response(200); self.send_header('Content-Length', str(len(data)))
                 self.end_headers(); self.wfile.write(data)
@@ -159,6 +159,8 @@ class FakeWorker:
                 if not self.auth(): return
                 raw = self.rfile.read(int(self.headers['Content-Length']))
                 parent.posts.append(raw)
+                parent.targets.append(self.path)
+                parent.received_headers.append(dict(self.headers))
                 data = b'data: {"choices":[{"delta":{"tool_calls":[{"function":{"arguments":"{\\"x\\":1}"}}]}}]}\n\ndata: [DONE]\n\n'
                 if parent.wait_stream:
                     self.send_response(200); self.send_header('Content-Type', 'text/event-stream')
@@ -180,6 +182,7 @@ class FakeWorker:
     def stop(self):
         self.stops += 1; self.dead = True
         self.http.shutdown(); self.http.server_close(); self.thread.join()
+        return {'owned_job_empty': True}
 
 
 class LifecycleTests(unittest.TestCase):
@@ -187,7 +190,8 @@ class LifecycleTests(unittest.TestCase):
         self.temp = tempfile.TemporaryDirectory()
         self.c = Controller({'fixture': profile()}, self.temp.name, validator=lambda p: None,
                             idle_probe=lambda: None, worker_factory=FakeWorker,
-                            command_factory=lambda p, port, root, cfg, key: ([str(port), key], root, {}))
+                            command_factory=lambda p, port, root, cfg, key: ([str(port), key], root, {}, None),
+                            release_probe=lambda p: None, secret_factory=lambda: 'fixture-only-worker-key')
     def tearDown(self):
         self.c.unload(); self.temp.cleanup()
     def test_busy_load_does_not_stop_or_release_existing_worker(self):
